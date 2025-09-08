@@ -1,0 +1,48 @@
+<!doctype html>
+</div>
+<div class="display" id="display">—</div>
+<div class="progress"><div class="bar" id="bar" style="width:0%"></div></div>
+<div class="row" style="margin-top:10px">
+<button class="btn warn" id="btn-self-report" title="Shortcut: O">I'm off‑task</button>
+<button class="btn secondary" id="btn-end-early" title="Shortcut: Esc">End Stage Early</button>
+</div>
+<div class="footer">Tip: connect wearables in another tab/app; this page exposes simple hooks to pipe risk scores in (see code, <code>window.NeuroBand.feedPhysio()</code>).</div>
+</div>
+
+
+<!-- Survey screen -->
+<div id="screen-survey" style="display:none">
+<h3>Quick Survey</h3>
+<p class="muted">Please rate the following (1 = very low, 7 = very high).</p>
+<div id="survey-qs" class="grid"></div>
+<div class="row" style="margin-top:12px">
+<button class="btn ok" id="btn-survey-submit">Submit</button>
+</div>
+</div>
+
+
+<!-- Finish screen -->
+<div id="screen-finish" style="display:none">
+<h2>Session Complete ✅</h2>
+<p class="muted">Remove sensors and debrief. You can export your data below.</p>
+<div class="row">
+<button class="btn" id="btn-export-json">Export JSON</button>
+<button class="btn" id="btn-export-csv">Export CSV</button>
+<button class="btn secondary" id="btn-restart">Restart</button>
+</div>
+<details style="margin-top:12px">
+<summary>Session summary</summary>
+<pre id="summary" style="white-space:pre-wrap"></pre>
+</details>
+</div>
+
+
+</div>
+</div>
+<script src="js/sart.js"></script>
+</body>
+</html>
+```
+
+
+---

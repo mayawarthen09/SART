@@ -2,8 +2,8 @@
   // ------------------------- Config & State -------------------------
   const ui = {
     intro: byId('screen-intro'), stage: byId('screen-stage'), survey: byId('screen-survey'), finish: byId('screen-finish'),
-    display: byId('display'), bar: byId('bar'), stageLabel: byId('stage-label'), risk: byId('risk'), trials: byId('trial-count'), timeLeft: byId('time-left'),
-    surveyQs: byId('survey-qs'), summary: byId('summary')
+    display: byId('display'), bar: byId('bar'), stageLabel: byId('stage-label'), risk: byId('risk'),
+    trials: byId('trial-count'), timeLeft: byId('time-left'), surveyQs: byId('survey-qs'), summary: byId('summary')
   };
   const cfg = () => ({
     baselineMin: toNum('cfg-baseline'), blockMin: toNum('cfg-blockMin'), breakMin: toNum('cfg-break'),
@@ -119,6 +119,8 @@
         vibrated,
       };
       STATE.trials.push(trial);
+      ui.trials.textContent = STATE.trials.length; // update trial count
+
       if(kind==='blockA') STATE.blockATrials++; else if(kind==='blockB') STATE.blockBTrials++;
 
       if(rtMs!=null) {
@@ -329,13 +331,13 @@
     for(const t of STATE.trials){
       lines.push(header.map(k => formatCSV(t[k])).join(','));
     }
-    const blob = new Blob([lines.join('\n')], {type:'text/csv'});
+    const blob = new Blob([lines.join('\\n')], {type:'text/csv'});
     download(blob, `${STATE.sessionId}.csv`);
   }
 
   function formatCSV(v){
     if(v==null) return '';
-    if(typeof v === 'string') return '"'+v.replace(/"/g,'""')+'"';
+    if(typeof v === 'string') return '"' + v.replace(/"/g,'""') + '"';
     return String(v);
   }
 
@@ -368,7 +370,7 @@
     if(document.fullscreenEnabled){ try{ await document.documentElement.requestFullscreen(); }catch{} }
     setScreen('stage');
     STATE.running = true; STATE.phase = 'baseline';
-   STATE.phasesMeta.startedAt = tsISO();
+    STATE.phasesMeta.startedAt = tsISO();
     runSession().catch(err=>{
       console.error(err);
       alert('Error occurred. Check console.');

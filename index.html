@@ -11,7 +11,6 @@
     <div class="card">
       <h1>SART — Sustained Attention to Response Task</h1>
       <p class="muted">
-        NeuroBand prototype: detects attention lapses and optionally nudges with a vibration.
         Press <span class="kbd">Space</span> for all digits except <strong>3</strong> (withhold on 3).
         Mark self-reported off-task with <span class="kbd">O</span>.
       </p>
@@ -24,41 +23,19 @@
             <li>Baseline: 2 min fixation.</li>
             <li>Block A (no feedback): 12 min SART.</li>
             <li>Break: 2 min.</li>
-            <li>Block B (feedback): 12 min SART with risk-based vibration.</li>
+            <li>Block B (feedback): 12 min SART with vibration.</li>
             <li>Surveys after each block (3–5 items).</li>
           </ul>
         </div>
-
         <div class="grid cols-3">
-          <div>
-            <label>Baseline (min)</label>
-            <input id="cfg-baseline" type="number" min="0" step="0.5" value="2" />
-          </div>
-          <div>
-            <label>Block length (min)</label>
-            <input id="cfg-blockMin" type="number" min="0.5" step="0.5" value="12" />
-          </div>
-          <div>
-            <label>Break (min)</label>
-            <input id="cfg-break" type="number" min="0" step="0.5" value="2" />
-          </div>
-          <div>
-            <label>ISI (ms)</label>
-            <input id="cfg-isi" type="number" min="100" step="50" value="900" />
-          </div>
-          <div>
-            <label>Stimulus on-screen (ms)</label>
-            <input id="cfg-stim" type="number" min="100" step="50" value="250" />
-          </div>
-          <div>
-            <label>No-go frequency (0..1)</label>
-            <input id="cfg-nogo" type="number" min="0.05" max="0.3" step="0.01" value="0.11" />
-          </div>
+          <div><label>Baseline (min)</label><input id="cfg-baseline" type="number" value="2" /></div>
+          <div><label>Block length (min)</label><input id="cfg-blockMin" type="number" value="12" /></div>
+          <div><label>Break (min)</label><input id="cfg-break" type="number" value="2" /></div>
+          <div><label>ISI (ms)</label><input id="cfg-isi" type="number" value="900" /></div>
+          <div><label>Stimulus (ms)</label><input id="cfg-stim" type="number" value="250" /></div>
+          <div><label>No-go frequency</label><input id="cfg-nogo" type="number" value="0.11" /></div>
         </div>
-
         <div class="row" style="margin-top:8px">
-          <span class="pill">Controls: <span class="kbd">Space</span> respond · <span class="kbd">O</span> self-report off-task</span>
-          <span class="pill">End early: <span class="kbd">Esc</span></span>
           <button class="btn ok grow" id="btn-start">Start Session</button>
         </div>
       </div>
@@ -77,16 +54,11 @@
           <button class="btn warn" id="btn-self-report" title="Shortcut: O">I'm off-task</button>
           <button class="btn secondary" id="btn-end-early" title="Shortcut: Esc">End Stage Early</button>
         </div>
-        <div class="footer">
-          Tip: connect wearables in another tab/app; this page exposes simple hooks to pipe risk scores in
-          (see code, <code>window.NeuroBand.feedPhysio()</code>).
-        </div>
       </div>
 
       <!-- Survey screen -->
       <div id="screen-survey" style="display:none">
         <h3>Quick Survey</h3>
-        <p class="muted">Please rate the following (1 = very low, 7 = very high).</p>
         <div id="survey-qs" class="grid"></div>
         <div class="row" style="margin-top:12px">
           <button class="btn ok" id="btn-survey-submit">Submit</button>
@@ -96,7 +68,7 @@
       <!-- Finish screen -->
       <div id="screen-finish" style="display:none">
         <h2>Session Complete ✅</h2>
-        <p class="muted">Remove sensors and debrief. You can export your data below.</p>
+        <p class="muted">Export your data:</p>
         <div class="row">
           <button class="btn" id="btn-export-json">Export JSON</button>
           <button class="btn" id="btn-export-csv">Export CSV</button>

@@ -1,46 +1,115 @@
 <!doctype html>
-</div>
-<div class="display" id="display">—</div>
-<div class="progress"><div class="bar" id="bar" style="width:0%"></div></div>
-<div class="row" style="margin-top:10px">
-<button class="btn warn" id="btn-self-report" title="Shortcut: O">I'm off‑task</button>
-<button class="btn secondary" id="btn-end-early" title="Shortcut: Esc">End Stage Early</button>
-</div>
-<div class="footer">Tip: connect wearables in another tab/app; this page exposes simple hooks to pipe risk scores in (see code, <code>window.NeuroBand.feedPhysio()</code>).</div>
-</div>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SART — NeuroBand Prototype</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="app">
+    <div class="card">
+      <h1>SART — Sustained Attention to Response Task</h1>
+      <p class="muted">
+        NeuroBand prototype: detects attention lapses and optionally nudges with a vibration.
+        Press <span class="kbd">Space</span> for all digits except <strong>3</strong> (withhold on 3).
+        Mark self-reported off-task with <span class="kbd">O</span>.
+      </p>
 
+      <!-- Intro screen -->
+      <div id="screen-intro" class="grid" style="display:block">
+        <div class="notice">
+          <h3>Protocol</h3>
+          <ul>
+            <li>Baseline: 2 min fixation.</li>
+            <li>Block A (no feedback): 12 min SART.</li>
+            <li>Break: 2 min.</li>
+            <li>Block B (feedback): 12 min SART with risk-based vibration.</li>
+            <li>Surveys after each block (3–5 items).</li>
+          </ul>
+        </div>
 
-<!-- Survey screen -->
-<div id="screen-survey" style="display:none">
-<h3>Quick Survey</h3>
-<p class="muted">Please rate the following (1 = very low, 7 = very high).</p>
-<div id="survey-qs" class="grid"></div>
-<div class="row" style="margin-top:12px">
-<button class="btn ok" id="btn-survey-submit">Submit</button>
-</div>
-</div>
+        <div class="grid cols-3">
+          <div>
+            <label>Baseline (min)</label>
+            <input id="cfg-baseline" type="number" min="0" step="0.5" value="2" />
+          </div>
+          <div>
+            <label>Block length (min)</label>
+            <input id="cfg-blockMin" type="number" min="0.5" step="0.5" value="12" />
+          </div>
+          <div>
+            <label>Break (min)</label>
+            <input id="cfg-break" type="number" min="0" step="0.5" value="2" />
+          </div>
+          <div>
+            <label>ISI (ms)</label>
+            <input id="cfg-isi" type="number" min="100" step="50" value="900" />
+          </div>
+          <div>
+            <label>Stimulus on-screen (ms)</label>
+            <input id="cfg-stim" type="number" min="100" step="50" value="250" />
+          </div>
+          <div>
+            <label>No-go frequency (0..1)</label>
+            <input id="cfg-nogo" type="number" min="0.05" max="0.3" step="0.01" value="0.11" />
+          </div>
+        </div>
 
+        <div class="row" style="margin-top:8px">
+          <span class="pill">Controls: <span class="kbd">Space</span> respond · <span class="kbd">O</span> self-report off-task</span>
+          <span class="pill">End early: <span class="kbd">Esc</span></span>
+          <button class="btn ok grow" id="btn-start">Start Session</button>
+        </div>
+      </div>
 
-<!-- Finish screen -->
-<div id="screen-finish" style="display:none">
-<h2>Session Complete ✅</h2>
-<p class="muted">Remove sensors and debrief. You can export your data below.</p>
-<div class="row">
-<button class="btn" id="btn-export-json">Export JSON</button>
-<button class="btn" id="btn-export-csv">Export CSV</button>
-<button class="btn secondary" id="btn-restart">Restart</button>
-</div>
-<details style="margin-top:12px">
-<summary>Session summary</summary>
-<pre id="summary" style="white-space:pre-wrap"></pre>
-</details>
-</div>
+      <!-- Stage screen -->
+      <div id="screen-stage" style="display:none">
+        <div class="row" style="justify-content:space-between;align-items:center">
+          <div class="pill" id="stage-label">Stage</div>
+          <div class="pill">Risk score: <span id="risk">0.00</span></div>
+          <div class="pill">Trials: <span id="trial-count">0</span></div>
+          <div class="pill">Time left: <span id="time-left">--:--</span></div>
+        </div>
+        <div class="display" id="display">—</div>
+        <div class="progress"><div class="bar" id="bar" style="width:0%"></div></div>
+        <div class="row" style="margin-top:10px">
+          <button class="btn warn" id="btn-self-report" title="Shortcut: O">I'm off-task</button>
+          <button class="btn secondary" id="btn-end-early" title="Shortcut: Esc">End Stage Early</button>
+        </div>
+        <div class="footer">
+          Tip: connect wearables in another tab/app; this page exposes simple hooks to pipe risk scores in
+          (see code, <code>window.NeuroBand.feedPhysio()</code>).
+        </div>
+      </div>
 
+      <!-- Survey screen -->
+      <div id="screen-survey" style="display:none">
+        <h3>Quick Survey</h3>
+        <p class="muted">Please rate the following (1 = very low, 7 = very high).</p>
+        <div id="survey-qs" class="grid"></div>
+        <div class="row" style="margin-top:12px">
+          <button class="btn ok" id="btn-survey-submit">Submit</button>
+        </div>
+      </div>
 
-</div>
-</div>
-<script src="js/sart.js"></script>
+      <!-- Finish screen -->
+      <div id="screen-finish" style="display:none">
+        <h2>Session Complete ✅</h2>
+        <p class="muted">Remove sensors and debrief. You can export your data below.</p>
+        <div class="row">
+          <button class="btn" id="btn-export-json">Export JSON</button>
+          <button class="btn" id="btn-export-csv">Export CSV</button>
+          <button class="btn secondary" id="btn-restart">Restart</button>
+        </div>
+        <details style="margin-top:12px">
+          <summary>Session summary</summary>
+          <pre id="summary" style="white-space:pre-wrap"></pre>
+        </details>
+      </div>
+
+    </div>
+  </div>
+  <script src="js/sart.js"></script>
 </body>
 </html>
-
----

@@ -300,17 +300,25 @@
     }
   });
 
-  const io = new MutationObserver(() => {
-    const val = ui.display.textContent;
-    if(/^[0-9]$/.test(val)){
-      STATE.displayOn = true; STATE.displayOnAt = now();
-      if(STATE.currentTrial) STATE.currentTrial._resolved = false;
-    } else {
-      STATE.displayOn = false; STATE.displayOnAt = null;
-      if(STATE.currentTrial) STATE.currentTrial._resolved = true;
-    }
-  });
-  io.observe(ui.display, { childList:true });
+// Track when stimulus is on screen to compute RT
+const io = new MutationObserver(() => {
+  const val = ui.display && ui.display.textContent;
+  if (val && /^[0-9]$/.test(val)) {
+    STATE.displayOn = true; STATE.displayOnAt = now();
+    if (STATE.currentTrial) STATE.currentTrial._resolved = false;
+  } else {
+    STATE.displayOn = false; STATE.displayOnAt = null;
+    if (STATE.currentTrial) STATE.currentTrial._resolved = true;
+  }
+});
+
+// Only observe if the node exists
+if (ui.display) {
+  io.observe(ui.display, { childList: true });
+} else {
+  console.warn('Missing #display element. Check your index.html: <div id="display" class="display">—</div>');
+}
+
 
   // ------------------------- Exports -------------------------
   function exportJSON(){

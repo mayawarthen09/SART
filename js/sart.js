@@ -7,7 +7,7 @@
   };
   const cfg = () => ({
     baselineMin: toNum('cfg-baseline'), blockMin: toNum('cfg-blockMin'), breakMin: toNum('cfg-break'),
-    isiMs: toNum('cfg-isi'), stimMs: toNum('cfg-stim'), nogoFreq: toNum('cfg-nogo'),
+    isiMs: toNum('cfg-isi'), stimMs: toNum('cfg-stim'), nogoFreq: toNum('cfg-nogo'), // treat as target frequency for '3'
   });
 
   const STATE = {
@@ -50,8 +50,9 @@
 
   // ------------------------- Trial Engine -------------------------
   const DIGITS = [0,1,2,3,4,5,6,7,8,9];
-  function pickStim(nogoFreq){
-    if(Math.random() < nogoFreq) return 3;
+  // Keep the slider/setting name but interpret as target frequency (how often to show '3')
+  function pickStim(targetFreq){
+    if(Math.random() < targetFreq) return 3;
     const choices = DIGITS.filter(d=>d!==3);
     return choices[Math.floor(Math.random()*choices.length)];
   }
@@ -72,11 +73,11 @@
       return;
     }
 
-    const { isiMs, stimMs, nogoFreq } = cfg();
+    const { isiMs, stimMs, nogoFreq } = cfg(); // nogoFreq is used as target frequency for 3
     let tNext = now();
     while(now() < STATE.tEnd && STATE.running){
       const digit = pickStim(nogoFreq);
-      const isNoGo = digit === 3;
+      const isTarget = digit === 3; // Press ONLY on 3
       const tStimOn = Math.max(now(), tNext);
       const deadline = tStimOn + stimMs + isiMs;
       let responded = false; let rtMs = null; let keyDown = null; let correct = null; let lapse=false; let vibrated=false; let riskAt = null;
@@ -97,21 +98,30 @@
 
       if(now() > tStimOn + stimMs){ ui.display.textContent = '·'; }
 
-      if(!responded && STATE.currentTrial){ responded = STATE.currentTrial.responded; rtMs = STATE.currentTrial.rtMs; keyDown = STATE.currentTrial.key; }
-if (isTarget) { // digit === 3 → should press
-  correct = responded;
-  lapse = !responded || (rtMs !== null && rtMs > Math.max(600, 2*median(STATE.rtWindow)||600));
-} else {        // digit !== 3 → should withhold
-  correct = !responded;
-  lapse = responded;
-}
+      if(!responded && STATE.currentTrial){
+        responded = STATE.currentTrial.responded;
+        rtMs = STATE.currentTrial.rtMs;
+        keyDown = STATE.currentTrial.key;
+      }
+
+      // -------- Corrected conditional block: press ONLY on 3 --------
+      if (isTarget) { // digit === 3 → should press
+        correct = responded;
+        // Miss or very slow press counts as lapse
+        const slowCut = Math.max(600, 2*median(STATE.rtWindow) || 600);
+        lapse = !responded || (rtMs !== null && rtMs > slowCut);
+      } else {        // digit !== 3 → should withhold
+        correct = !responded;
+        lapse = responded; // false alarm
+      }
       if(STATE.selfReportActive) lapse = true;
+      // --------------------------------------------------------------
 
       const trial = {
         sessionId: STATE.sessionId,
         phase: kind,
         tStimOn: tsISO(),
-        digit, isNoGo,
+        digit, isTarget,
         responded, keyDown, rtMs,
         correct, lapse,
         riskScore: riskAt,
@@ -213,7 +223,7 @@ if (isTarget) { // digit === 3 → should press
     renderSurvey('after_blockA');
     await waitForSurvey();
 
-    await runBreak(c.breakMin);
+    const skipped = await runBreak(c.breakMin);
 
     await runStage('blockB', c.blockMin, true);
     STATE.running = false;
@@ -223,13 +233,35 @@ if (isTarget) { // digit === 3 → should press
     finish();
   }
 
+  // Creates a Skip Break button if missing; resolves true if skipped, false if full time elapsed
   function runBreak(minutes){
     STATE.phase = 'break'; setScreen('stage'); ui.stageLabel.textContent = labelFor('break');
     const durationMs = minutes*60*1000; const tStart = now(); STATE.tEnd = tStart + durationMs;
     ui.display.textContent = 'Break';
+
+    // Ensure a Skip Break button exists
+    let skipBtn = byId('btn-skip-break');
+    if(!skipBtn){
+      skipBtn = document.createElement('button');
+      skipBtn.id = 'btn-skip-break';
+      skipBtn.textContent = 'Skip Break';
+      // Insert next to the stage label if possible
+      const parent = ui.stageLabel?.parentElement || document.body;
+      parent.appendChild(skipBtn);
+    }
+
     return new Promise(async resolve => {
+      let skipped = false;
+      const handler = ()=>{ skipped = true; cleanup(); resolve(true); };
+      skipBtn.addEventListener('click', handler);
+
+      const cleanup = ()=>{
+        skipBtn.removeEventListener('click', handler);
+      };
+
       const tick = async ()=>{
-        if(now() >= STATE.tEnd) return resolve();
+        if(skipped) return;
+        if(now() >= STATE.tEnd){ cleanup(); return resolve(false); }
         const left = STATE.tEnd - now();
         ui.timeLeft.textContent = fmtTime(left);
         ui.bar.style.width = `${100*(1 - left/durationMs)}%`;
@@ -300,25 +332,24 @@ if (isTarget) { // digit === 3 → should press
     }
   });
 
-// Track when stimulus is on screen to compute RT
-const io = new MutationObserver(() => {
-  const val = ui.display && ui.display.textContent;
-  if (val && /^[0-9]$/.test(val)) {
-    STATE.displayOn = true; STATE.displayOnAt = now();
-    if (STATE.currentTrial) STATE.currentTrial._resolved = false;
+  // Track when stimulus is on screen to compute RT
+  const io = new MutationObserver(() => {
+    const val = ui.display && ui.display.textContent;
+    if (val && /^[0-9]$/.test(val)) {
+      STATE.displayOn = true; STATE.displayOnAt = now();
+      if (STATE.currentTrial) STATE.currentTrial._resolved = false;
+    } else {
+      STATE.displayOn = false; STATE.displayOnAt = null;
+      if (STATE.currentTrial) STATE.currentTrial._resolved = true;
+    }
+  });
+
+  // Only observe if the node exists
+  if (ui.display) {
+    io.observe(ui.display, { childList: true });
   } else {
-    STATE.displayOn = false; STATE.displayOnAt = null;
-    if (STATE.currentTrial) STATE.currentTrial._resolved = true;
+    console.warn('Missing #display element. Check your index.html: <div id="display" class="display">—</div>');
   }
-});
-
-// Only observe if the node exists
-if (ui.display) {
-  io.observe(ui.display, { childList: true });
-} else {
-  console.warn('Missing #display element. Check your index.html: <div id="display" class="display">—</div>');
-}
-
 
   // ------------------------- Exports -------------------------
   function exportJSON(){
@@ -333,13 +364,13 @@ if (ui.display) {
 
   function exportCSV(){
     const header = [
-      'sessionId','phase','tStimOn','digit','isNoGo','responded','keyDown','rtMs','correct','lapse','riskScore','selfReportActive','vibrated'
+      'sessionId','phase','tStimOn','digit','isTarget','responded','keyDown','rtMs','correct','lapse','riskScore','selfReportActive','vibrated'
     ];
     const lines = [header.join(',')];
     for(const t of STATE.trials){
       lines.push(header.map(k => formatCSV(t[k])).join(','));
     }
-    const blob = new Blob([lines.join('\\n')], {type:'text/csv'});
+    const blob = new Blob([lines.join('\n')], {type:'text/csv'});
     download(blob, `${STATE.sessionId}.csv`);
   }
 

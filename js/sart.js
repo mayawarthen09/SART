@@ -1,13 +1,26 @@
 (() => {
   // ------------------------- Config & State -------------------------
   const ui = {
-    intro: byId('screen-intro'), stage: byId('screen-stage'), survey: byId('screen-survey'), finish: byId('screen-finish'),
-    display: byId('display'), bar: byId('bar'), stageLabel: byId('stage-label'), risk: byId('risk'),
-    trials: byId('trial-count'), timeLeft: byId('time-left'), surveyQs: byId('survey-qs'), summary: byId('summary')
+    intro: byId('screen-intro'),
+    stage: byId('screen-stage'),
+    survey: byId('screen-survey'),
+    finish: byId('screen-finish'),
+    display: byId('display'),
+    bar: byId('bar'),
+    stageLabel: byId('stage-label'),
+    risk: byId('risk'),
+    trials: byId('trial-count'),
+    timeLeft: byId('time-left'),
+    surveyQs: byId('survey-qs'),
+    summary: byId('summary')
   };
   const cfg = () => ({
-    baselineMin: toNum('cfg-baseline'), blockMin: toNum('cfg-blockMin'), breakMin: toNum('cfg-break'),
-    isiMs: toNum('cfg-isi'), stimMs: toNum('cfg-stim'), nogoFreq: toNum('cfg-nogo'), // treat as target frequency for '3'
+    baselineMin: toNum('cfg-baseline'),
+    blockMin: toNum('cfg-blockMin'),
+    breakMin: toNum('cfg-break'),
+    isiMs: toNum('cfg-isi'),
+    stimMs: toNum('cfg-stim'),
+    nogoFreq: toNum('cfg-nogo'), // interpreted as frequency of showing 3 (target)
   });
 
   const STATE = {
@@ -29,7 +42,12 @@
   function byId(id){return document.getElementById(id)}
   function toNum(id){return parseFloat(byId(id).value)}
   function now(){return performance.now()}
-  function fmtTime(ms){const s=Math.max(0,Math.ceil(ms/1000));const m=Math.floor(s/60);const r=s%60;return `${String(m).padStart(2,'0')}:${String(r).padStart(2,'0')}`}
+  function fmtTime(ms){
+    const s=Math.max(0,Math.ceil(ms/1000));
+    const m=Math.floor(s/60);
+    const r=s%60;
+    return `${String(m).padStart(2,'0')}:${String(r).padStart(2,'0')}`;
+  }
 
   function setScreen(which){
     ui.intro.style.display = which==='intro'?'block':'none';
@@ -44,23 +62,33 @@
     STATE.trials = [];
     STATE.surveys = [];
     STATE.phasesMeta = {};
-    STATE.blockATrials = 0; STATE.blockBTrials = 0; STATE.rtWindow = []; STATE.riskScore = 0;
+    STATE.blockATrials = 0;
+    STATE.blockBTrials = 0;
+    STATE.rtWindow = [];
+    STATE.riskScore = 0;
     setScreen('intro');
   }
 
   // ------------------------- Trial Engine -------------------------
   const DIGITS = [0,1,2,3,4,5,6,7,8,9];
-  // Keep the slider/setting name but interpret as target frequency (how often to show '3')
+
+  // Keep the control name but treat it as the probability of showing 3 (the target)
   function pickStim(targetFreq){
-    if(Math.random() < targetFreq) return 3;
-    const choices = DIGITS.filter(d=>d!==3);
+    if (Math.random() < targetFreq) return 3;
+    const choices = DIGITS.filter(d => d !== 3);
     return choices[Math.floor(Math.random()*choices.length)];
   }
 
   async function runStage(kind, minutes, withFeedback){
-    STATE.phase = kind; STATE.running = true; STATE.selfReportActive = false; ui.stageLabel.textContent = labelFor(kind);
+    STATE.phase = kind;
+    STATE.running = true;
+    STATE.selfReportActive = false;
+    ui.stageLabel.textContent = labelFor(kind);
     setScreen('stage');
-    const durationMs = minutes*60*1000; const tStart = now(); STATE.tEnd = tStart + durationMs;
+
+    const durationMs = minutes*60*1000;
+    const tStart = now();
+    STATE.tEnd = tStart + durationMs;
 
     if(kind === 'baseline'){
       ui.display.textContent = '+';
@@ -73,14 +101,23 @@
       return;
     }
 
-    const { isiMs, stimMs, nogoFreq } = cfg(); // nogoFreq is used as target frequency for 3
+    const { isiMs, stimMs, nogoFreq } = cfg(); // nogoFreq used as target freq for "3"
     let tNext = now();
+
     while(now() < STATE.tEnd && STATE.running){
       const digit = pickStim(nogoFreq);
-      const isTarget = digit === 3; // Press ONLY on 3
+      const isTarget = digit === 3; // press ONLY on 3
+
       const tStimOn = Math.max(now(), tNext);
       const deadline = tStimOn + stimMs + isiMs;
-      let responded = false; let rtMs = null; let keyDown = null; let correct = null; let lapse=false; let vibrated=false; let riskAt = null;
+
+      let responded = false;
+      let rtMs = null;
+      let keyDown = null;
+      let correct = null;
+      let lapse = false;
+      let vibrated = false;
+      let riskAt = null;
 
       ui.display.textContent = String(digit);
       riskAt = computeRisk();
@@ -104,24 +141,24 @@
         keyDown = STATE.currentTrial.key;
       }
 
-      // -------- Corrected conditional block: press ONLY on 3 --------
-      if (isTarget) { // digit === 3 → should press
+      // ---------- Corrected conditional block (press only on 3) ----------
+      if (isTarget) { // must press
         correct = responded;
-        // Miss or very slow press counts as lapse
         const slowCut = Math.max(600, 2*median(STATE.rtWindow) || 600);
-        lapse = !responded || (rtMs !== null && rtMs > slowCut);
-      } else {        // digit !== 3 → should withhold
+        lapse = !responded || (rtMs !== null && rtMs > slowCut); // miss or too slow
+      } else {        // must withhold
         correct = !responded;
         lapse = responded; // false alarm
       }
       if(STATE.selfReportActive) lapse = true;
-      // --------------------------------------------------------------
+      // -------------------------------------------------------------------
 
       const trial = {
         sessionId: STATE.sessionId,
         phase: kind,
         tStimOn: tsISO(),
-        digit, isTarget,
+        digit,
+        isTarget,             // <— note name change
         responded, keyDown, rtMs,
         correct, lapse,
         riskScore: riskAt,
@@ -129,11 +166,12 @@
         vibrated,
       };
       STATE.trials.push(trial);
-      ui.trials.textContent = STATE.trials.length; // update trial count
+      ui.trials.textContent = STATE.trials.length;
 
-      if(kind==='blockA') STATE.blockATrials++; else if(kind==='blockB') STATE.blockBTrials++;
+      if(kind==='blockA') STATE.blockATrials++;
+      else if(kind==='blockB') STATE.blockBTrials++;
 
-      if(rtMs!=null) {
+      if(rtMs!=null){
         STATE.rtWindow.push(rtMs);
         if(STATE.rtWindow.length>25) STATE.rtWindow.shift();
       }
@@ -155,8 +193,14 @@
   function computeRisk(){
     const m = median(STATE.rtWindow) || 350;
     const mad = medianAbsoluteDeviation(STATE.rtWindow) || 40;
-    let risk = 0.2 + clamp((m-350)/300, 0, 0.6) + clamp((mad-60)/200, 0, 0.4) + (Math.random()*0.05);
-    if(window.__NB_physioBoost){ risk += clamp(window.__NB_physioBoost, -0.2, 0.8); window.__NB_physioBoost *= 0.9; }
+    let risk = 0.2
+      + clamp((m-350)/300, 0, 0.6)
+      + clamp((mad-60)/200, 0, 0.4)
+      + (Math.random()*0.05);
+    if(window.__NB_physioBoost){
+      risk += clamp(window.__NB_physioBoost, -0.2, 0.8);
+      window.__NB_physioBoost *= 0.9;
+    }
     STATE.riskScore = clamp(risk,0,1);
     ui.risk.textContent = STATE.riskScore.toFixed(2);
     return STATE.riskScore;
@@ -223,7 +267,7 @@
     renderSurvey('after_blockA');
     await waitForSurvey();
 
-    const skipped = await runBreak(c.breakMin);
+    await runBreak(c.breakMin);
 
     await runStage('blockB', c.blockMin, true);
     STATE.running = false;
@@ -233,10 +277,15 @@
     finish();
   }
 
-  // Creates a Skip Break button if missing; resolves true if skipped, false if full time elapsed
+  // Skip-able break (creates button if missing)
   function runBreak(minutes){
-    STATE.phase = 'break'; setScreen('stage'); ui.stageLabel.textContent = labelFor('break');
-    const durationMs = minutes*60*1000; const tStart = now(); STATE.tEnd = tStart + durationMs;
+    STATE.phase = 'break';
+    setScreen('stage');
+    ui.stageLabel.textContent = labelFor('break');
+
+    const durationMs = minutes*60*1000;
+    const tStart = now();
+    STATE.tEnd = tStart + durationMs;
     ui.display.textContent = 'Break';
 
     // Ensure a Skip Break button exists
@@ -245,7 +294,6 @@
       skipBtn = document.createElement('button');
       skipBtn.id = 'btn-skip-break';
       skipBtn.textContent = 'Skip Break';
-      // Insert next to the stage label if possible
       const parent = ui.stageLabel?.parentElement || document.body;
       parent.appendChild(skipBtn);
     }
@@ -303,7 +351,11 @@
       surveys: STATE.surveys,
     };
     ui.summary.textContent = JSON.stringify(summary, null, 2);
-    localStorage.setItem(STATE.sessionId, JSON.stringify({trials:STATE.trials, surveys:STATE.surveys, meta:STATE.phasesMeta}));
+    localStorage.setItem(STATE.sessionId, JSON.stringify({
+      trials:STATE.trials,
+      surveys:STATE.surveys,
+      meta:STATE.phasesMeta
+    }));
   }
 
   // ------------------------- Input Handling -------------------------
@@ -344,7 +396,6 @@
     }
   });
 
-  // Only observe if the node exists
   if (ui.display) {
     io.observe(ui.display, { childList: true });
   } else {
@@ -382,17 +433,28 @@
 
   function download(blob, filename){
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob); a.download = filename; a.click();
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
     setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
   }
 
   // ------------------------- Utils -------------------------
   function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
   function clamp(x,a,b){ return Math.min(b, Math.max(a,x)); }
-  function median(arr){ if(!arr || !arr.length) return null; const s=[...arr].sort((a,b)=>a-b); const mid=Math.floor(s.length/2); return s.length%2?s[mid]:(s[mid-1]+s[mid])/2 }
-  function medianAbsoluteDeviation(arr){ if(!arr||arr.length<2) return 0; const m=median(arr); return median(arr.map(x=>Math.abs(x-m))); }
+  function median(arr){
+    if(!arr || !arr.length) return null;
+    const s=[...arr].sort((a,b)=>a-b);
+    const mid=Math.floor(s.length/2);
+    return s.length%2?s[mid]:(s[mid-1]+s[mid])/2;
+  }
+  function medianAbsoluteDeviation(arr){
+    if(!arr||arr.length<2) return 0;
+    const m=median(arr);
+    return median(arr.map(x=>Math.abs(x-m)));
+  }
   function tsISO(){ return new Date().toISOString(); }
-  function pulse(el){ el.animate([{transform:'scale(1)'},{transform:'scale(1.05)'},{transform:'scale(1)'}],{duration:250}); }
+  function pulse(el){ el?.animate([{transform:'scale(1)'},{transform:'scale(1.05)'},{transform:'scale(1)'}],{duration:250}); }
 
   window.NeuroBand = {
     feedPhysio(val){

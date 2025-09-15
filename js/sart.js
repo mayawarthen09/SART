@@ -98,13 +98,13 @@
       if(now() > tStimOn + stimMs){ ui.display.textContent = '·'; }
 
       if(!responded && STATE.currentTrial){ responded = STATE.currentTrial.responded; rtMs = STATE.currentTrial.rtMs; keyDown = STATE.currentTrial.key; }
-      if(isNoGo){
-        correct = !responded;
-        lapse = responded;
-      } else {
-        correct = responded;
-        if(!responded) lapse = true; else if(rtMs !== null && rtMs > Math.max(600, 2*median(STATE.rtWindow)||600)) lapse = true;
-      }
+if (isTarget) { // digit === 3 → should press
+  correct = responded;
+  lapse = !responded || (rtMs !== null && rtMs > Math.max(600, 2*median(STATE.rtWindow)||600));
+} else {        // digit !== 3 → should withhold
+  correct = !responded;
+  lapse = responded;
+}
       if(STATE.selfReportActive) lapse = true;
 
       const trial = {

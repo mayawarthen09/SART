@@ -31,7 +31,7 @@
     breakMin: toNum('cfg-break'),
     isiMs: toNum('cfg-isi'),
     stimMs: toNum('cfg-stim'),
-    nogoFreq: toNum('cfg-nogo'), // interpreted as frequency of showing 3 (target)
+    nogoFreq: toNum('cfg-nogo'), // frequency of showing 3 (target)
   });
 
   const STATE = {
@@ -48,7 +48,7 @@
     riskScore: 0,
     rtWindow: [],
     selfReportActive: false,
-    trialIndex: 0,           // NEW: global trial counter
+    trialIndex: 0,           // global trial counter
     displayOn: false,
     displayOnAt: null,
   };
@@ -70,7 +70,7 @@
     STATE.blockBTrials = 0;
     STATE.rtWindow = [];
     STATE.riskScore = 0;
-    STATE.trialIndex = 0;    // reset trial counter
+    STATE.trialIndex = 0;
     STATE.currentTrial = null;
     STATE.displayOn = false;
     STATE.displayOnAt = null;
@@ -80,7 +80,7 @@
   // ------------------------- Trial Engine -------------------------
   const DIGITS = [0,1,2,3,4,5,6,7,8,9];
 
-  // Keep the control name but treat it as the probability of showing 3 (the target)
+  // probability of showing 3 (target)
   function pickStim(targetFreq){
     if (Math.random() < targetFreq) return 3;
     const choices = DIGITS.filter(d => d !== 3);
@@ -98,7 +98,7 @@
     const tStart = now();
     STATE.tEnd = tStart + durationMs;
 
-    // NEW: track start of this block for relative timing
+    // track start of this block for relative timing
     const blockStart = tStart;
 
     if(kind === 'baseline'){
@@ -112,7 +112,7 @@
       return;
     }
 
-    const { isiMs, stimMs, nogoFreq } = cfg(); // nogoFreq used as target freq for "3"
+    const { isiMs, stimMs, nogoFreq } = cfg();
     let tNext = now();
 
     while(now() < STATE.tEnd && STATE.running){
@@ -166,23 +166,36 @@
       if(STATE.selfReportActive) lapse = true;
       // -----------------------------------------------------------------
 
-      // NEW: increment global trial counter
+      // increment global trial counter
       STATE.trialIndex++;
 
-      // NEW: block index for analysis (0 = baseline, 1 = blockA, 2 = blockB)
+      // block index + trial-within-block
       let blockIndex = 0;
-      if (kind === 'blockA') blockIndex = 1;
-      if (kind === 'blockB') blockIndex = 2;
+      let blockTrial = 0;
+      if (kind === 'blockA') {
+        blockIndex = 1;
+        STATE.blockATrials++;
+        blockTrial = STATE.blockATrials;
+      } else if (kind === 'blockB') {
+        blockIndex = 2;
+        STATE.blockBTrials++;
+        blockTrial = STATE.blockBTrials;
+      }
 
-      // NEW: time since this block started, in ms
+      // time since this block started, in ms
       const tFromBlockStartMs = Math.round(tStimOn - blockStart);
+
+      // trialId: session + block + blockTrial, very specific but readable
+      const trialId = `${STATE.sessionId}_B${blockIndex}_T${String(blockTrial).padStart(3,'0')}`;
 
       const trial = {
         sessionId: STATE.sessionId,
+        trialId,
         trial: STATE.trialIndex,          // trial number across whole session
-        block: blockIndex,                // 1 or 2 for main blocks
+        block: blockIndex,                // 0 baseline, 1 blockA, 2 blockB
+        blockTrial,                       // trial number within the block
         condition: kind,                  // "baseline", "blockA", "blockB"
-        tStimOn: tsISO(),
+        tStimOn: tsISO(),                 // date+time
         tFromBlockStartMs,
         digit,
         isTarget,
@@ -198,9 +211,6 @@
 
       STATE.trials.push(trial);
       ui.trials.textContent = STATE.trials.length;
-
-      if(kind==='blockA') STATE.blockATrials++;
-      else if(kind==='blockB') STATE.blockBTrials++;
 
       if(rtMs!=null){
         STATE.rtWindow.push(rtMs);
@@ -314,7 +324,7 @@
     finish();
   }
 
-  // Skip-able break (creates button if missing)
+  // Skip-able break
   function runBreak(minutes){
     STATE.phase = 'break';
     setScreen('stage');
@@ -370,24 +380,33 @@
     });
   }
 
-  function finish(){
-    setScreen('finish');
-    STATE.phase = 'done';
+  function summarizeSession(){
     const lapsesA = STATE.trials.filter(t=>t.condition==='blockA' && t.lapse).length;
     const lapsesB = STATE.trials.filter(t=>t.condition==='blockB' && t.lapse).length;
     const rtA = median(STATE.trials.filter(t=>t.condition==='blockA' && t.rtMs!=null).map(t=>t.rtMs));
     const rtB = median(STATE.trials.filter(t=>t.condition==='blockB' && t.rtMs!=null).map(t=>t.rtMs));
-    const summary = {
+    return {
       sessionId: STATE.sessionId,
+      date: (STATE.phasesMeta.startedAt || tsISO()),
       trials: STATE.trials.length,
       blockATrials: STATE.blockATrials,
       blockBTrials: STATE.blockBTrials,
-      lapsesA, lapsesB,
-      medianRtA: Math.round(rtA||0),
-      medianRtB: Math.round(rtB||0),
-      surveys: STATE.surveys,
+      lapsesA,
+      lapsesB,
+      medianRtA: Math.round(rtA || 0),
+      medianRtB: Math.round(rtB || 0),
+      surveysCount: STATE.surveys.length,
     };
-    ui.summary.textContent = JSON.stringify(summary, null, 2);
+  }
+
+  function finish(){
+    setScreen('finish');
+    STATE.phase = 'done';
+    const summary = summarizeSession();
+    ui.summary.textContent = JSON.stringify({
+      ...summary,
+      surveys: STATE.surveys
+    }, null, 2);
     localStorage.setItem(STATE.sessionId, JSON.stringify({
       trials:STATE.trials,
       surveys:STATE.surveys,
@@ -452,14 +471,17 @@
     download(blob, `${STATE.sessionId}.json`);
   }
 
-  function exportCSV(){
+  // helper: build CSV text from a list of trials
+  function buildTrialsCSV(trials){
     const header = [
       'sessionId',
-      'trial',               // trial number
-      'block',               // 0 = baseline, 1 = blockA, 2 = blockB
-      'condition',           // "baseline", "blockA", "blockB"
+      'trialId',
+      'trial',
+      'block',
+      'blockTrial',
+      'condition',
       'tStimOn',
-      'tFromBlockStartMs',   // ms from start of that block
+      'tFromBlockStartMs',
       'digit',
       'isTarget',
       'responded',
@@ -472,11 +494,53 @@
       'vibrated'
     ];
     const lines = [header.join(',')];
-    for(const t of STATE.trials){
+    for(const t of trials){
       lines.push(header.map(k => formatCSV(t[k])).join(','));
     }
-    const blob = new Blob([lines.join('\n')], {type:'text/csv'});
-    download(blob, `${STATE.sessionId}.csv`);
+    return lines.join('\n');
+  }
+
+  function exportCSV(){
+    if (!STATE.sessionId || STATE.trials.length === 0){
+      alert('No data to export yet.');
+      return;
+    }
+
+    // ALL trials
+    const allCsv = buildTrialsCSV(STATE.trials);
+    download(new Blob([allCsv], {type:'text/csv'}), `${STATE.sessionId}_all_trials.csv`);
+
+    // Block A only
+    const blockATrials = STATE.trials.filter(t => t.condition === 'blockA');
+    if(blockATrials.length){
+      const csvA = buildTrialsCSV(blockATrials);
+      download(new Blob([csvA], {type:'text/csv'}), `${STATE.sessionId}_blockA.csv`);
+    }
+
+    // Block B only
+    const blockBTrials = STATE.trials.filter(t => t.condition === 'blockB');
+    if(blockBTrials.length){
+      const csvB = buildTrialsCSV(blockBTrials);
+      download(new Blob([csvB], {type:'text/csv'}), `${STATE.sessionId}_blockB.csv`);
+    }
+
+    // Session summary CSV (one row)
+    const summary = summarizeSession();
+    const summaryHeader = [
+      'sessionId',
+      'date',
+      'trials',
+      'blockATrials',
+      'blockBTrials',
+      'lapsesA',
+      'lapsesB',
+      'medianRtA',
+      'medianRtB',
+      'surveysCount'
+    ];
+    const summaryLine = summaryHeader.map(k => formatCSV(summary[k])).join(',');
+    const summaryCsv = [summaryHeader.join(','), summaryLine].join('\n');
+    download(new Blob([summaryCsv], {type:'text/csv'}), `${STATE.sessionId}_summary.csv`);
   }
 
   function formatCSV(v){

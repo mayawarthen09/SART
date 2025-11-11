@@ -1,5 +1,15 @@
 (() => {
   // ------------------------- Config & State -------------------------
+  function byId(id){return document.getElementById(id)}
+  function toNum(id){return parseFloat(byId(id).value)}
+  function now(){return performance.now()}
+  function fmtTime(ms){
+    const s=Math.max(0,Math.ceil(ms/1000));
+    const m=Math.floor(s/60);
+    const r=s%60;
+    return `${String(m).padStart(2,'0')}:${String(r).padStart(2,'0')}`;
+  }
+
   const ui = {
     intro: byId('screen-intro'),
     stage: byId('screen-stage'),
@@ -14,6 +24,7 @@
     surveyQs: byId('survey-qs'),
     summary: byId('summary')
   };
+
   const cfg = () => ({
     baselineMin: toNum('cfg-baseline'),
     blockMin: toNum('cfg-blockMin'),
@@ -37,17 +48,10 @@
     riskScore: 0,
     rtWindow: [],
     selfReportActive: false,
+    trialIndex: 0,           // NEW: global trial counter
+    displayOn: false,
+    displayOnAt: null,
   };
-
-  function byId(id){return document.getElementById(id)}
-  function toNum(id){return parseFloat(byId(id).value)}
-  function now(){return performance.now()}
-  function fmtTime(ms){
-    const s=Math.max(0,Math.ceil(ms/1000));
-    const m=Math.floor(s/60);
-    const r=s%60;
-    return `${String(m).padStart(2,'0')}:${String(r).padStart(2,'0')}`;
-  }
 
   function setScreen(which){
     ui.intro.style.display = which==='intro'?'block':'none';
@@ -66,6 +70,10 @@
     STATE.blockBTrials = 0;
     STATE.rtWindow = [];
     STATE.riskScore = 0;
+    STATE.trialIndex = 0;    // reset trial counter
+    STATE.currentTrial = null;
+    STATE.displayOn = false;
+    STATE.displayOnAt = null;
     setScreen('intro');
   }
 
@@ -89,6 +97,9 @@
     const durationMs = minutes*60*1000;
     const tStart = now();
     STATE.tEnd = tStart + durationMs;
+
+    // NEW: track start of this block for relative timing
+    const blockStart = tStart;
 
     if(kind === 'baseline'){
       ui.display.textContent = '+';
@@ -133,7 +144,9 @@
         if(STATE.currentTrial && STATE.currentTrial._resolved) break;
       }
 
-      if(now() > tStimOn + stimMs){ ui.display.textContent = '·'; }
+      if(now() > tStimOn + stimMs){
+        ui.display.textContent = '·';
+      }
 
       if(!responded && STATE.currentTrial){
         responded = STATE.currentTrial.responded;
@@ -141,7 +154,7 @@
         keyDown = STATE.currentTrial.key;
       }
 
-      // ---------- Corrected conditional block (press only on 3) ----------
+      // ---------- Correctness / lapse logic (press only on 3) ----------
       if (isTarget) { // must press
         correct = responded;
         const slowCut = Math.max(600, 2*median(STATE.rtWindow) || 600);
@@ -151,20 +164,38 @@
         lapse = responded; // false alarm
       }
       if(STATE.selfReportActive) lapse = true;
-      // -------------------------------------------------------------------
+      // -----------------------------------------------------------------
+
+      // NEW: increment global trial counter
+      STATE.trialIndex++;
+
+      // NEW: block index for analysis (0 = baseline, 1 = blockA, 2 = blockB)
+      let blockIndex = 0;
+      if (kind === 'blockA') blockIndex = 1;
+      if (kind === 'blockB') blockIndex = 2;
+
+      // NEW: time since this block started, in ms
+      const tFromBlockStartMs = Math.round(tStimOn - blockStart);
 
       const trial = {
         sessionId: STATE.sessionId,
-        phase: kind,
+        trial: STATE.trialIndex,          // trial number across whole session
+        block: blockIndex,                // 1 or 2 for main blocks
+        condition: kind,                  // "baseline", "blockA", "blockB"
         tStimOn: tsISO(),
+        tFromBlockStartMs,
         digit,
-        isTarget,             // <— note name change
-        responded, keyDown, rtMs,
-        correct, lapse,
+        isTarget,
+        responded,
+        keyDown,
+        rtMs,
+        correct,
+        lapse,
         riskScore: riskAt,
         selfReportActive: STATE.selfReportActive,
         vibrated,
       };
+
       STATE.trials.push(trial);
       ui.trials.textContent = STATE.trials.length;
 
@@ -207,7 +238,10 @@
   }
 
   function tryVibrate(ms){
-    if(navigator.vibrate){ navigator.vibrate(ms); return true; }
+    if(navigator.vibrate){
+      navigator.vibrate(ms);
+      return true;
+    }
     return false;
   }
 
@@ -249,7 +283,10 @@
       if(!sel){ complete=false; break; }
       entries[q.id] = Number(sel.value);
     }
-    if(!complete){ alert('Please answer all items.'); return false; }
+    if(!complete){
+      alert('Please answer all items.');
+      return false;
+    }
     STATE.surveys.push({ sessionId: STATE.sessionId, phase, at: tsISO(), ...entries });
     return true;
   }
@@ -336,10 +373,10 @@
   function finish(){
     setScreen('finish');
     STATE.phase = 'done';
-    const lapsesA = STATE.trials.filter(t=>t.phase==='blockA' && t.lapse).length;
-    const lapsesB = STATE.trials.filter(t=>t.phase==='blockB' && t.lapse).length;
-    const rtA = median(STATE.trials.filter(t=>t.phase==='blockA' && t.rtMs!=null).map(t=>t.rtMs));
-    const rtB = median(STATE.trials.filter(t=>t.phase==='blockB' && t.rtMs!=null).map(t=>t.rtMs));
+    const lapsesA = STATE.trials.filter(t=>t.condition==='blockA' && t.lapse).length;
+    const lapsesB = STATE.trials.filter(t=>t.condition==='blockB' && t.lapse).length;
+    const rtA = median(STATE.trials.filter(t=>t.condition==='blockA' && t.rtMs!=null).map(t=>t.rtMs));
+    const rtB = median(STATE.trials.filter(t=>t.condition==='blockB' && t.rtMs!=null).map(t=>t.rtMs));
     const summary = {
       sessionId: STATE.sessionId,
       trials: STATE.trials.length,
@@ -388,10 +425,12 @@
   const io = new MutationObserver(() => {
     const val = ui.display && ui.display.textContent;
     if (val && /^[0-9]$/.test(val)) {
-      STATE.displayOn = true; STATE.displayOnAt = now();
+      STATE.displayOn = true;
+      STATE.displayOnAt = now();
       if (STATE.currentTrial) STATE.currentTrial._resolved = false;
     } else {
-      STATE.displayOn = false; STATE.displayOnAt = null;
+      STATE.displayOn = false;
+      STATE.displayOnAt = null;
       if (STATE.currentTrial) STATE.currentTrial._resolved = true;
     }
   });
@@ -415,7 +454,22 @@
 
   function exportCSV(){
     const header = [
-      'sessionId','phase','tStimOn','digit','isTarget','responded','keyDown','rtMs','correct','lapse','riskScore','selfReportActive','vibrated'
+      'sessionId',
+      'trial',               // trial number
+      'block',               // 0 = baseline, 1 = blockA, 2 = blockB
+      'condition',           // "baseline", "blockA", "blockB"
+      'tStimOn',
+      'tFromBlockStartMs',   // ms from start of that block
+      'digit',
+      'isTarget',
+      'responded',
+      'keyDown',
+      'rtMs',
+      'correct',
+      'lapse',
+      'riskScore',
+      'selfReportActive',
+      'vibrated'
     ];
     const lines = [header.join(',')];
     for(const t of STATE.trials){
@@ -454,7 +508,12 @@
     return median(arr.map(x=>Math.abs(x-m)));
   }
   function tsISO(){ return new Date().toISOString(); }
-  function pulse(el){ el?.animate([{transform:'scale(1)'},{transform:'scale(1.05)'},{transform:'scale(1)'}],{duration:250}); }
+  function pulse(el){
+    el?.animate(
+      [{transform:'scale(1)'},{transform:'scale(1.05)'},{transform:'scale(1)'}],
+      {duration:250}
+    );
+  }
 
   window.NeuroBand = {
     feedPhysio(val){
@@ -467,10 +526,14 @@
     vibrate(ms=60){ return tryVibrate(ms); }
   };
 
+  // ------------------------- Buttons & Boot -------------------------
   byId('btn-start').addEventListener('click', async () => {
-    if(document.fullscreenEnabled){ try{ await document.documentElement.requestFullscreen(); }catch{} }
+    if(document.fullscreenEnabled){
+      try{ await document.documentElement.requestFullscreen(); }catch(e){}
+    }
     setScreen('stage');
-    STATE.running = true; STATE.phase = 'baseline';
+    STATE.running = true;
+    STATE.phase = 'baseline';
     STATE.phasesMeta.startedAt = tsISO();
     runSession().catch(err=>{
       console.error(err);
